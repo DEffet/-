@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Rainbow Cube</title>
+    <style>
+        body { 
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas { 
+            display: block; 
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <!-- Include the library for working with matrices BEFORE our script -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+    
+    <script>
+        // Check if gl-matrix is loaded
+        if (typeof mat4 === 'undefined') {
+            alert('Error: gl-matrix library is not loaded. Check your internet connection.');
+        }
+
+        const canvas = document.getElementById('canvas');
+        // Try to get the WebGL context, if it fails, show an error
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        
+        if (!gl) {
+            alert('Your browser does not support WebGL. Try Chrome, Firefox or Edge.');
+            throw new Error('WebGL is not supported');
+        }
+
+        // Set the canvas size to the window size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        resizeCanvas();
+
+        // Vertex shader
+        const vertexShaderSource = `
+            attribute vec3 aPosition;
+            attribute vec3 aColor;
+            
+            uniform mat4 uModelViewMatrix;
+            uniform mat4 uProjectionMatrix;
+            
+            varying vec3 vColor;
+            
+            void main() {
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+                vColor = aColor;
+            }
+        `;
+
+        // Fragment shader
+        const fragmentShaderSource = `
+            precision mediump float;
+            
+            varying vec3 vColor;
+            
+            void main() {
+                gl_FragColor = vec4(vColor, 1.0);
+            }
+        `;
+
+        // Shader compilation
+        function compileShader(gl, source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            
+            return shader;
+        }
+
+        const vertexShader = compileShader(gl, vertexShaderSource, gl.VERTEX_SHADER);
+        const fragmentShader = compileShader(gl, fragmentShaderSource, gl.FRAGMENT_SHADER);
+
+        // Creating a program
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error('Program linking error:', gl.getProgramInfoLog(program));
+        }
+
+        gl.useProgram(program);
+
+        // Cube vertices (8 vertices)
+        const vertices = new Float32Array([
+            // Front face
+            -0.5, -0.5,  0.5,
+             0.5, -0.5,  0.5,
+             0.5,  0.5,  0.5,
+            -0.5,  0.5,  0.5,
+            
+            // Back face
+            -0.5, -0.5, -0.5,
+             0.5, -0.5, -0.5,
+             0.5,  0.5, -0.5,
+            -0.5,  0.5, -0.5
+        ]);
+
+        // Colors for each vertex (rainbow)
+        const colors = new Float32Array([
+            // Front face
+            1.0, 0.0, 0.0, // red
+            1.0, 0.5, 0.0, // orange
+            1.0, 1.0, 0.0, // yellow
+            0.5, 1.0, 0.0, // yellow-green
+            
+            // Back face
+            0.0, 1.0, 1.0, // cyan
+            0.0, 0.0, 1.0, // blue
+            0.5, 0.0, 1.0, // violet
+            1.0, 0.0, 1.0  // magenta
+        ]);
+
+        // Indices for drawing faces (12 triangles)
+        const indices = new Uint16Array([
+            // Front face
+            0, 1, 2,
+            0, 2, 3,
+            
+            // Back face
+            4, 6, 5,
+            4, 7, 6,
+            
+            // Top face
+            3, 2, 6,
+            3, 6, 7,
+            
+            // Bottom face
+            0, 5, 1,
+            0, 4, 5,
+            
+            // Right face
+            1, 5, 6,
+            1, 6, 2,
+            
+            // Left face
+            0, 3, 7,
+            0, 7, 4
+        ]);
+
+        // Creating buffers
+        const vertexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+        const colorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+
+        const indexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+
+        // Getting attributes and uniform variables
+        const aPosition = gl.getAttribLocation(program, 'aPosition');
+        const aColor = gl.getAttribLocation(program, 'aColor');
+        const uModelViewMatrix = gl.getUniformLocation(program, 'uModelViewMatrix');
+        const uProjectionMatrix = gl.getUniformLocation(program, 'uProjectionMatrix');
+
+        // Setting up the projection matrix
+        const projectionMatrix = mat4.create();
+        mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100.0);
+        gl.uniformMatrix4fv(uProjectionMatrix, false, projectionMatrix);
+
+        // Setting up the view and model matrix
+        const modelViewMatrix = mat4.create();
+        mat4.translate(modelViewMatrix, modelViewMatrix, [0.0, 0.0, -3.0]);
+
+        // Variables for rotating the cube with the mouse
+        let isDragging = false;
+        let lastX = 0, lastY = 0;
+        let rotationX = 0, rotationY = 0;
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            lastX = e.clientX;
+            lastY = e.clientY;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const deltaX = e.clientX - lastX;
+            const deltaY = e.clientY - lastY;
+            
+            rotationY += deltaX * 0.01;
+            rotationX += deltaY * 0.01;
+            
+            lastX = e.clientX;
+            lastY = e.clientY;
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            isDragging = false;
+        });
+
+        // Rendering function
+        function render() {
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+
+            // Update the model-view matrix with rotation
+            const currentModelViewMatrix = mat4.create();
+            mat4.translate(currentModelViewMatrix, currentModelViewMatrix, [0.0, 0.0, -3.0]);
+            mat4.rotateX(currentModelViewMatrix, currentModelViewMatrix, rotationX);
+            mat4.rotateY(currentModelViewMatrix, currentModelViewMatrix, rotationY);
+            
+            gl.uniformMatrix4fv(uModelViewMatrix, false, currentModelViewMatrix);
+
+            // Setting vertex attributes
+            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+            gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(aPosition);
+
+            // Setting color attributes
+            gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+            gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(aColor);
+
+            // Drawing the cube
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+            gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
+
+            requestAnimationFrame(render);
+        }
+
+        // Start rendering
+        render();
+
+        // Handling window resize
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            // Update the projection matrix
+            mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100.0);
+            gl.uniformMatrix4fv(uProjectionMatrix, false, projectionMatrix);
+        });
+    </script>
+</body>
+</html>
